@@ -72,6 +72,16 @@ async function run(label: string): Promise<void> {
   for (let o = 0; o < fixture.length; o += CHUNK) {
     chunks.push(fixture.slice(o, o + CHUNK))
   }
+  // A v60 daemon stream: synced at attach and stamped on every frame (B anchors; A has no anchor step).
+  const stamping = runtime as unknown as {
+    anchorProviderSequence?: (ptyId: string, outputSequence: number, providerSeq: number) => void
+  }
+  for (let p = 0; p < PTYS; p++) {
+    runtime.synchronizePtyOutputSequenceFromProvider(`pty-${p}`, {
+      value: 0,
+      generation: 'continued'
+    })
+  }
   const h = monitorEventLoopDelay({ resolution: 1 })
   h.enable()
   const cpu0 = process.cpuUsage()
@@ -88,7 +98,8 @@ async function run(label: string): Promise<void> {
         runtime.notePtyDataGap(`pty-${p}`, DROPPED_CHARS)
         gaps++
       }
-      runtime.onPtyData(`pty-${p}`, chunks[c], at++)
+      const seq = runtime.onPtyData(`pty-${p}`, chunks[c], at++)
+      stamping.anchorProviderSequence?.(`pty-${p}`, seq, seq)
       syncMs += performance.now() - s
     }
     await new Promise((resolve) => setImmediate(resolve))
